@@ -1,86 +1,119 @@
 package converter
 
-enum class UnitType {LENGTH, WEIGHT, UNKNOWN}
-
-enum class Unit(val type: UnitType, val normalizedName: String, val factor: Double) {
-    METER(UnitType.LENGTH, "meter", 1.0),
-    KILOMETER(UnitType.LENGTH, "kilometer", 1_000.0),
-    CENTIMETER(UnitType.LENGTH, "centimeter", 0.01),
-    MILLIMETER(UnitType.LENGTH, "millimeter", 0.001),
-    MILE(UnitType.LENGTH, "mile", 1_609.35),
-    YARD(UnitType.LENGTH, "yard", 0.9144),
-    FOOT(UnitType.LENGTH, "foot", 0.3048),
-    INCH(UnitType.LENGTH, "inch", 0.0254),
-    GRAM(UnitType.WEIGHT, "gram", 1.0),
-    KILOGRAM(UnitType.WEIGHT, "kilogram", 1_000.0),
-    MILLIGRAM(UnitType.WEIGHT, "milligram", 0.001),
-    POUND(UnitType.WEIGHT, "pound", 453.592),
-    OUNCE(UnitType.WEIGHT, "ounce", 28.3495),
-    UNKNOWN(UnitType.UNKNOWN, "???", 0.0);
-}
+import java.util.*
 
 fun main() {
-    while (true) {
+    val scanner = Scanner(System.`in`)
+    val getString = { scanner.nextLine().toLowerCase() }
+    var input = ""
+
+    while (input != "exit") {
         print("Enter what you want to convert (or exit): ")
-
-        val input = readLine()!!
-        if (input == "exit") {
-            break
-        }
-
-        val (x, fromUnit, _, toUnit) = input.split(" ")
-        val fromValue = x.toDouble()
-
-        val from = getNormalizedUnit(fromUnit)
-        val to = getNormalizedUnit(toUnit)
-
-        // error 1: "from" and/or "to" is unknown
-        if (from == Unit.UNKNOWN || to == Unit.UNKNOWN) {
-            val displayFrom = plural(from.normalizedName)
-            val displayTo = plural(to.normalizedName)
-            println("Conversion from $displayFrom to $displayTo is impossible")
-            continue
-        }
-
-        // error 2: both are known/correct but incompatible (length <> weight)
-        if (from.type != to.type) {
-            println("Conversion from ${plural(from.normalizedName)} to ${plural(to.normalizedName)} is impossible")
-            continue
-        }
-
-        val result = fromValue * from.factor / to.factor
-
-        val displayFromUnit = if (fromValue == 1.0) from.normalizedName else plural(from.normalizedName)
-        val displayResultUnit = if (result == 1.0) to.normalizedName else plural(to.normalizedName)
-
-        println("$fromValue $displayFromUnit is $result $displayResultUnit")
+        input = getString()
+        if (input != "exit") unitConverter(input)
     }
 }
 
-fun getNormalizedUnit(unit :String): Unit {
-    return when (unit.toLowerCase()) {
-        "m", "meter", "meters" -> Unit.METER
-        "km", "kilometer", "kilometers" -> Unit.KILOMETER
-        "cm", "centimeter", "centimeters" -> Unit.CENTIMETER
-        "mm", "millimeter", "millimeters" -> Unit.MILLIMETER
-        "mi", "mile", "miles" -> Unit.MILE
-        "yd", "yard", "yards" -> Unit.YARD
-        "ft", "foot", "feet" -> Unit.FOOT
-        "in", "inch", "inches" -> Unit.INCH
-        "g", "gram", "grams" -> Unit.GRAM
-        "kg", "kilogram", "kilograms" -> Unit.KILOGRAM
-        "mg", "milligram", "milligrams" -> Unit.MILLIGRAM
-        "lb", "pound", "pounds" -> Unit.POUND
-        "oz", "ounce", "ounces" -> Unit.OUNCE
-        else -> Unit.UNKNOWN
+fun unitConverter(input: String) {
+    val strMeasure1: String
+    val strMeasure2: String
+    val strArray = input.replace("degrees ", "").replace("degree ", "").split(" ").toTypedArray()
+    if (strArray.size > 4 || strArray[0].toDoubleOrNull() == null) {
+        parseError()
+        return
+    }
+    val amount = strArray[0].toDouble()
+    val measure1 = Units.getMeasure(strArray[1])
+    val measure2 = Units.getMeasure(strArray[3])
+    val converted = if (measure1 != Units.ERROR && measure2 != Units.ERROR && measure1.unit == measure2.unit) {
+        when {
+            measure1 == measure2 -> amount
+            measure1.unit == 2 -> convTemp(amount, measure1, measure2)
+            else -> {
+                if (amount < 0.0) {
+                    negativeError(measure1.unit)
+                    return
+                }
+                measure1.valueM * amount / measure2.valueM
+            }
+        }
+    } else {
+        error(measure1, measure2)
+        return
+    }
+
+    strMeasure1 = if (amount == 1.0) measure1.strings[1] else measure1.strings[2]
+    strMeasure2 = if (converted == 1.0) measure2.strings[1] else measure2.strings[2]
+    println("$amount $strMeasure1 is $converted $strMeasure2")
+}
+
+private fun convTemp(amount: Double, measure1: Units, measure2: Units): Double {
+    var converted = 0.0
+
+    when (measure1) {
+        Units.KELVIN -> {
+            when (measure2) {
+                Units.CELSIUS -> converted = amount - 273.15
+                Units.FAHRENHEIT -> converted = amount * 9 / 5 - 459.67
+            }
+        }
+        Units.CELSIUS -> {
+            when (measure2) {
+                Units.KELVIN -> converted = amount + 273.15
+                Units.FAHRENHEIT -> converted = amount * 9 / 5 + 32
+            }
+        }
+        Units.FAHRENHEIT -> {
+            when (measure2) {
+                Units.KELVIN -> converted = (amount + 459.67) * 5 / 9
+                Units.CELSIUS -> converted = (amount - 32) * 5 / 9
+            }
+        }
+    }
+    return converted
+}
+
+private fun error(unit1: Units, unit2: Units) {
+    println("Conversion from ${unit1.strings[2]} to ${unit2.strings[2]} is impossible")
+}
+
+private fun parseError() = println("Parse error")
+
+private fun negativeError(num: Int) {
+    val word = if (num == 0) "Length" else "Weight"
+    println("$word shouldn't be negative")
+}
+
+enum class Units(val valueM: Double, val strings: Array<String>, val unit: Int) {
+    // measurements: unit = 0
+    METER(1.0, arrayOf("m", "meter", "meters"), 0),
+    KILOMETER(1000.0, arrayOf("km", "kilometer", "kilometers"), 0),
+    CENTIMETER(.01, arrayOf("cm", "centimeter", "centimeters"), 0),
+    MILLIMETER(.001, arrayOf("mm", "millimeter", "millimeters"), 0),
+    MILE(1609.35, arrayOf("mi", "mile", "miles"), 0),
+    YARD(.9144, arrayOf("yd", "yard", "yards"), 0),
+    FEET(.3048, arrayOf("ft", "foot", "feet"), 0),
+    INCH(.0254, arrayOf("in", "inch", "inches"), 0),
+
+    // mass: unit = 1
+    GRAM(1.0, arrayOf("g", "gram", "grams"), 1),
+    KILOGRAM(1000.0, arrayOf("kg", "kilogram", "kilograms"), 1),
+    MILLIGRAM(.001, arrayOf("mg", "milligram", "milligrams"), 1),
+    POUND(453.592, arrayOf("lb", "pound", "pounds"), 1),
+    OUNCE(28.3495, arrayOf("oz", "ounce", "ounces"), 1),
+
+    // temperatures: unit = 2
+    KELVIN(0.0, arrayOf("k", "Kelvin", "Kelvins"), 2),
+    CELSIUS(0.0, arrayOf("dc", "degree Celsius", "degrees Celsius", "c", "celsius"), 2),
+    FAHRENHEIT(0.0, arrayOf("fahrenheit", "degree Fahrenheit", "degrees Fahrenheit", "df", "f"), 2),
+    ERROR(0.0, arrayOf("", "", "???"), -1);
+
+    companion object {
+        fun getMeasure(size: String): Units {
+            for (enum in values()) {
+                for (string in enum.strings) if (string.toLowerCase() == size) return enum
+            }
+            return ERROR
+        }
     }
 }
-
-fun plural(unit: String) = when (unit) {
-    "foot" -> "feet"
-    "inch" -> "inches"
-    "???" -> "???"
-    else -> unit + "s"
-}
-
-
